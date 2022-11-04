@@ -1,0 +1,88 @@
+<html>
+  <h1>So how much does Peppy earn?</h1>
+
+  We make some assumptions, one of which is that Peppy only earns by means of supporters.
+  Therefore, we set out to investigate the number of concurrent supporters.
+
+  <br><br>
+  We are distrustful of others because:
+  <ul>
+    <li>they have no reason to tell us the (accurate) truth</li>
+    <li>most statements regarding the number of supporters are outdated.</li>
+  </ul>
+
+  We find that to give an accurate answer to our question, we must count the supporters directly.
+  At the time of writing (2022-10-26), there are ~3.18e7 users.
+  On the other hand, the <a href=https://osu.ppy.sh/docs/index.html>osu! api v2</a> has a ratelimit of 1200 requests/minute.
+  Scanning all users, without ticking off Peppy, would require ~19 days.
+  This stretches our goal far outside the domain of a 'quick question'.
+  If we assume that quick questions are answered within a day, we are forced to approximate our answer.
+
+  <br><br>
+  Recalling some statistics intuition and sampling bounds, we have that:
+  <ul>
+    <li>samples of >200 points are more than large enough to have meaningful averages and variances [see 1]</li>
+    <li>when we sample a constant fraction of sqrt(N) for a population size N, the confidence interval of the sampled average tends to stay the same for all N  [see 2]</li>
+  </ul>
+  
+  We write up <a href=howmuch/sampling.py>some Python code</a> to perform the sampling for us.
+  Clearly, are significant differences in the fractions of supporters in various groups we may identify.
+  For example, higher ranking players are more likely to have supporter than lower ranking players [see 3].
+  To capture these variations, we bracket our samples by number of digits in the rank of a player, and require that each bracket is sufficiently full.
+  (This means, either >200 points, or more points than the square root of the size of the bracket).
+
+  <br><br>
+  After sampling for ~2.5 hours, this yields <a href=howmuch/samples.json>a distribution</a>.
+  By simple extrapolation, we can estimate the total number of supporters.
+  To adjust for the cost of running the servers, we make use of a questionable source, stating that
+  paying $26 worth of supporter tags, keeps the servers running for 41.2 minutes.
+  Furthermore, we incorporate the bulk discount on supporter tags by using that lowest price a supporter tag can be $2.166/month,
+  and the highest price can be $4/month.
+
+  <br><br>
+  The script then outputs the following overview:
+
+<pre><code>
+sampled 77    /  99        from 0         until 100      , extrapolating to 77     (77.78%)
+sampled 531   /  901       from 100       until 1000     , extrapolating to 530    (58.93%)
+sampled 3393  /  9000      from 1000      until 10000    , extrapolating to 3393   (37.70%)
+sampled 81    /  409       from 10000     until 100000   , extrapolating to 17823  (19.80%)
+sampled 86    /  4257      from 100000    until 1000000  , extrapolating to 18181  (2.02%)
+sampled 16    /  11609     from 1000000   until 10000000 , extrapolating to 12404  (0.14%)
+sampled 20    /  123742    from 10000000  until 31797108 , extrapolating to 3522   (0.02%)
+total extrapolated supporters 55930
+monthly acquired moneys between lies between 121144 and 223720
+yearly acquired moneys lies between 1453733 and 2684640
+
+peppy loses 331689 moneys per year
+this leaves between 1122044 and 2352951 per year
+
+this number of supporters yields between 2303607 and 4254122 minutes per year
+or between 4.38 and 8.09 years per year
+</code></pre>
+
+  This tells us, among other facts, that Peppy earns between $1.12e6 and $2.35e6 per year.
+  <br><br>
+  QEI.
+
+  <br><br>
+  <br><br>
+  [1]
+  Under conditions which we will postulate without further justification,
+  the <a href=https://en.wikipedia.org/wiki/Central_limit_theorem>Central limit theorem</a> states that the sample average, considered as a random variable itself, of
+  independently drawn samples, that is i.i.d. random variables, from _any_ distribution (satisfying these conditions) will be distributed normally for sufficient n.
+  The rate of convergence then does depend on the specific distribution, but not on the population size, hence >100 is a generally accepted lower bound on sufficient n.
+  <br><br>
+  [2]
+  If I recall correctly from the single datamining inspired course that I attended.
+  <br><br>
+  [3]
+  The reason for this may be twofold: these higher ranking players are typically both more invested in osu!, hence may be more willing to spend on the game,
+  while they also gather more attention, and are more likely to be gifted supporter tags from fans or otherwise.
+  Whatever the reason, for our purposes the end result is the same: the number of supporters at the start of a month remains
+  a lower bound on the units of supporter paid for the previous month [see 4].
+  <br><br>
+  [4]
+  Certain usergroups are awarded supporter for the role they fulfill, however, we immediately assume that their influence is neglegible.
+  <br><br>
+</html>
