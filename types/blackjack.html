@@ -1,0 +1,119 @@
+<html>
+  <a href=../main.html>Back</a><br><br>
+
+  <a href="https://github.com/samuelhklumpers/hs-nd-dp">Solving a blackjack variant with Haskell (and other non-deterministic dynamic programming problems if you want).</a><br><br>
+  <a href="blackjack-doc/index.html">Docs.</a><br><br>
+
+  <p>
+    I tried tackling the blackjack minigame in Holocure by just modelling it in Python and throwing some sensible strategy at it. This revealed two problems:
+    <ul>
+      <li>strategy was net negative,</li>
+      <li>python is not very fast if you don't try to optimize it.</li>
+    </ul>
+    Hill-searching a strategy table sounded a bit silly, so instead I tried DP (dynamic programming). Realizing I did not want to figure out a nice shape for the table and that memoization is pretty good for DP I moved the project to Haskell.
+  </p>
+
+  Find and replace:
+  <p><li>(.*?)$</p></li>
+  <p>&lt;li&gt;$1&lt;li&gt;</p>
+
+  <p>
+    Some approximations had to be made, because I didn't want to bring in a lstsq linear solver again:
+    <ul>
+      <li>draws increment the multiplier</li>
+      <li>the table is truncated at 30 rounds</li>
+    </ul>
+    Writing this up using a simple map in a state to optimize the expected value of a single run, I did find that the game was a (significant) net positive (yay).
+  </p>
+
+  <p>
+    The initial code simply dumped the 30MB of binary data for the strategy table, which wasn't really user friendly for inspection in GHCi either. However, in such a table there is a lot of redundant data, namely:
+    <ul>
+      <li>you can just discard the last 10 rounds</li>
+      <li>90% of the states aren't reached when following the optimal strategy (I only really used this later)</li>
+      <li>you can also discard the internal states</li>
+      <li>the strategy tends to stay constant after some multiplier for most states</li>
+    </ul>
+    Filtering the table and compressing the runs produces a much more practical 419kB table.
+  </p>
+
+  <p>
+    Noticing some things were off, and figuring that it might be useful in general, I separated the blackjack code from the DP code. Writing the DP solver with monad-memo made some things a bit more readable. However, after making a flame graph, it turned out Data.Map is not very good datastructure for this. Likewise, after thinking for a bit, it also turns out the expected value isn't a great metric.
+  </p>
+
+  <p>
+    A better metric is the geometric growth rate, as you might gather from the theory around the Kelly criterion.
+    You can implement/think of this in a couple of ways:
+    <ul>
+      <li>rather than the absolute gain, you optimize the:
+        <ul>
+          <li>growth ratio</li>
+          <li>the logarithm of 1 + gain</li>
+        </ul>
+      </li>
+      <li>attach less value to big low probability wins</li>
+      <li>attach more value to 100% chance to gain x than 50% chance to gain 2x</li>
+    </ul>
+    One should note, that if the maximum bet is capped at a constant value, this reduces to optimizing the expected value again. (Evidently log(1+x) ~ x for x around 0).
+  </p>
+
+  <p>
+    Duplicating the problem just to use log(1+x) instead seemed a bit silly, so instead I generalized the objective value over anything that supports mixture distributions. This includes the variance, so you can also compute this for free (i.e., at the cost of your time).
+  </p>
+
+  <p>
+    Determining the actual Kelly bet for a complex game is a bit hard (the strategy depends on the bet, and the bet on the strategy...). This lead me to the obvious solution of presenting the DP solver with a finite set of bets each round, and having it pick out the optimal one.
+  </p>
+
+  <p>
+    Separating the solver and the problem also revealed a nice trick to reduce the table to only the relevant/reachable states when following the optimal strategy: formulate a new problem using the same value function but which restricts the available actions to the optimal actions found in the first run. This makes the full table way smaller (one order of magnitude), and cuts the compressed table in a respectable ~1/3 (137kB).
+  </p>
+
+  <p>
+    At some point in between, I replaced monad-memo with a simple custom memoization setup in an IORef pointing to a HashMap, for a marginal performance gain.
+  </p>
+
+  <p>
+    Returning to approximating the Kelly bet, one notes that dynamic programming doesn't always have to search the entire space of actions at each state, and certainly not if you have _some_ idea of what your objective value looks like. Thus, I generalized over the search procedure for the actions.
+  </p>
+
+  <p>
+    This caused a big memory leak which took entirely too much staring at retainer graphs to locate, and probably happened when I rewrote `(a, b) &lt;- c` and `return (f a , b)` to `fmap (first f) c` or something. This causes the tuple `c` to not be forced, and hold on to its millions of friends, filling up all of the 16GB the WSL gets, crashing it.
+  </p>
+
+  <p>
+    Abstracting away the search procedure let's me switch out the search procedure for a bet with a golden section search. Assuming the expected value of the log looks like a normal Kelly curve (i.e., one with a single extremum), this converges onto the optimal bet linearly with a rate of 1:the golden ratio. This yielded a 0.6% boost in geometric growth rate from the initial state (but up to 15.2% for later states...).
+  </p>
+
+  <p>
+    As I was looking at the flamegraphs at this point anyway, I also noted that now the hashing for lookups into the hash table was taking up ~50% of the total time. Replacing the generic hash with one specific to the maximal values you'll find in a game of blackjack consequently nearly halved execution time.
+  </p>
+
+  <p>
+    To wrap up, I reproduced the tables one last time, and dumped the compressed tables into <a href="blackjack-tables/">10 human readable CSVs</a>. The optimal bets for each round then are as follows:
+    <table>
+      <tr><td>round</td><td>expected value</td><td>bet fraction</td></tr>
+      <tr><td>0</td><td>0.5038589442535829</td><td>2.5124993703207477e-3</td></tr>
+      <tr><td>1</td><td>0.5351672841716077</td><td>9.770744186043653e-2</td></tr>
+      <tr><td>2</td><td>0.5756021800242809</td><td>0.2172942406179023</td></tr>
+      <tr><td>3</td><td>0.623070321223182</td><td>0.2861779481151684</td></tr>
+      <tr><td>4</td><td>0.6772166702122286</td><td>0.33998665939050987</td></tr>
+      <tr><td>5</td><td>0.738024159815339</td><td>0.38758413063556785</td></tr>
+      <tr><td>6</td><td>0.8055373689098105</td><td>0.42394536310970043</td></tr>
+      <tr><td>7</td><td>0.8797490661441738</td><td>0.45646783813283387</td></tr>
+      <tr><td>8</td><td>0.9606113959098835</td><td>0.4858846931408254</td></tr>
+      <tr><td>9</td><td>1.0479314480076296</td><td>0.5090903081185332</td></tr>
+      <tr><td>10</td><td>1.1412933699245598</td><td>0.5334821643858833</td></tr>
+      <tr><td>11</td><td>1.2400499199818156</td><td>0.5516627806229495</td></tr>
+      <tr><td>12</td><td>1.3432277856161143</td><td>0.569843396860016</td></tr>
+      <tr><td>13</td><td>1.4495248498734274</td><td>0.5861046343715826</td></tr>
+      <tr><td>14</td><td>1.5571768468664953</td><td>0.5992602518680075</td></tr>
+      <tr><td>15</td><td>1.663891519724929</td><td>0.6124158693644323</td></tr>
+      <tr><td>16</td><td>1.7666003598793374</td><td>0.6236521081353575</td></tr>
+      <tr><td>17</td><td>1.8616301383411187</td><td>0.6337021056166404</td></tr>
+      <tr><td>18</td><td>1.9445364111164956</td><td>0.6418327243724238</td></tr>
+      <tr><td>19</td><td>2.0101269138330524</td><td>0.6499633431282072</td></tr>
+      <tr><td>20</td><td>2.052596953825265</td><td>0.6580939618839906</td></tr>
+    </table>
+  </p>
+</html>
